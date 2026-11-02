@@ -1,1 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AGED CONNECT</title>
+<style>
+:root{--bg:#0b1b2e;--card:#12304d;--ink:#eaf2fb;--mut:#9db4cc;--acc:#2ecc71;--line:#244766}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:28px 18px;background:var(--card);border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:1.8rem}.tag{color:var(--mut);margin:.3rem 0 0}
+main{max-width:760px;margin:auto;padding:16px}
+input,select,textarea,button{font:inherit;padding:10px;border-radius:8px;border:1px solid var(--line);background:#0e2740;color:var(--ink);width:100%;margin:4px 0}
+button{background:var(--acc);color:#04210f;border:0;font-weight:600;cursor:pointer;width:auto;padding:10px 16px}
+button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+.meta{color:var(--mut);font-size:.8rem}.badge{background:var(--acc);color:#04210f;border-radius:99px;padding:2px 9px;font-size:.75rem;font-weight:600}
+.card p{white-space:pre-wrap}a{color:#7cc4ff}.hide{display:none}.err{color:#ff8a8a}
+.actions button{margin-right:6px;padding:6px 12px}
+</style>
+</head>
+<body>
+<header>
+<h1>AGED CONNECT</h1>
+<p class="tag">Your class. Your updates. Your voice. — Hon. Fellah, AGED Class Representative</p>
+</header>
+<main>
+<div class="row"><input id="q" placeholder="Search announcements"><select id="cat"><option value="">All categories</option></select></div>
 
+<div id="adminBox" class="card">
+<div id="loginView">
+<b>Administrator login</b>
+<input id="em" type="email" placeholder="Email" autocomplete="username">
+<input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+<button id="loginBtn">Sign in</button> <span id="loginErr" class="err"></span>
+</div>
+<div id="formView" class="hide">
+<div class="row"><b>Publish an update</b><button class="alt" id="logoutBtn" style="flex:0">Sign out</button></div>
+<input id="t" placeholder="Title">
+<select id="fc"></select>
+<textarea id="b" rows="5" placeholder="Message"></textarea>
+<input id="l" placeholder="Optional link (e.g. Google Drive PDF)">
+<button id="saveBtn">Publish</button> <button class="alt" id="cancelBtn">Clear</button>
+<span id="saveErr" class="err"></span>
+</div>
+</div>
+
+<div id="list"></div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-firestore-compat.js"></script>
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyBJiePwUCAfHo2UM8nfu0g8cpyQ_u_msOQ",
+  authDomain:"aged-updates.firebaseapp.com",
+  projectId:"aged-updates",
+  storageBucket:"aged-updates.firebasestorage.app",
+  messagingSenderId:"1052432478372",
+  appId:"1:1052432478372:web:cbad39e5349b7343227631"
+});
+const auth=firebase.auth(), db=firebase.firestore(), col=db.collection("announcements");
+const CATS=["Announcement","Timetable","Notice","Document","Reminder"];
+const $=id=>document.getElementById(id);
+let items=[], editId=null, isAdmin=false;
+
+CATS.forEach(c=>{$("cat").add(new Option(c,c));$("fc").add(new Option(c,c));});
+const esc=s=>String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const safeUrl=u=>/^https?:\/\//i.test(u)?u:"";
+
+function render(){
+  const q=$("q").value.toLowerCase(), c=$("cat").value;
+  const rows=items.filter(i=>(!c||i.category===c)&&(!q||(i.title+" "+i.body).toLowerCase().includes(q)));
+  $("list").innerHTML=rows.length?rows.map(i=>{
+    const d=i.createdAt?i.createdAt.toDate().toLocaleString():"just now";
+    const u=safeUrl(i.link);
+    return `<div class="card"><span class="badge">${esc(i.category)}</span> <span class="meta">${d}</span>
+    <h3>${esc(i.title)}</h3><p>${esc(i.body)}</p>
+    ${u?`<a href="${esc(u)}" target="_blank" rel="noopener">Open document / link</a>`:""}
+    ${isAdmin?`<div class="actions"><button onclick="edit('${i.id}')">Edit</button><button class="alt" onclick="del('${i.id}')">Delete</button></div>`:""}</div>`;
+  }).join(""):'<p class="meta">No announcements found.</p>';
+}
+col.orderBy("createdAt","desc").onSnapshot(s=>{items=s.docs.map(d=>({id:d.id,...d.data()}));render();},
+  e=>{$("list").innerHTML='<p class="err">Could not load updates: '+esc(e.message)+'</p>';});
+$("q").oninput=render;$("cat").onchange=render;
+
+auth.onAuthStateChanged(u=>{
+  isAdmin=!!u;
+  $("loginView").classList.toggle("hide",isAdmin);
+  $("formView").classList.toggle("hide",!isAdmin);
+  render();
+});
+$("loginBtn").onclick=()=>{
+  $("loginErr").textContent="";
+  auth.signInWithEmailAndPassword($("em").value.trim(),$("pw").value)
+    .catch(e=>$("loginErr").textContent="Login failed: "+e.code);
+};
+$("logoutBtn").onclick=()=>auth.signOut();
+
+function clearForm(){editId=null;$("t").value=$("b").value=$("l").value="";$("saveBtn").textContent="Publish";}
+$("cancelBtn").onclick=clearForm;
+$("saveBtn").onclick=async()=>{
+  $("saveErr").textContent="";
+  const data={title:$("t").value.trim(),body:$("b").value.trim(),category:$("fc").value,link:$("l").value.trim()};
+  if(!data.title||!data.body){$("saveErr").textContent="Title and message are required.";return;}
+  try{
+    if(editId) await col.doc(editId).update(data);
+    else await col.add({...data,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    clearForm();
+  }catch(e){$("saveErr").textContent="Not allowed or failed: "+e.code;}
+};
+window.edit=id=>{
+  const i=items.find(x=>x.id===id);if(!i)return;
+  editId=id;$("t").value=i.title;$("b").value=i.body;$("fc").value=i.category;$("l").value=i.link||"";
+  $("saveBtn").textContent="Save changes";window.scrollTo({top:0,behavior:"smooth"});
+};
+window.del=async id=>{
+  if(!confirm("Delete this announcement?"))return;
+  try{await col.doc(id).delete();}catch(e){alert("Delete failed: "+e.code);}
+};
+</script>
+</body>
+  </html>
